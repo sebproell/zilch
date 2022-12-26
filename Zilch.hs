@@ -49,12 +49,15 @@ scoreMultiples 5 n = if n < 3 then Action (n*50) (replicate n 5) else multiplyBa
 scoreMultiples d n = if n >= 3 then multiplyBase d (d*100) n else mempty
 
 
-scoreSet' :: [Die] -> Action
-scoreSet' ds
+scoreSpecial :: [Die] -> Action
+scoreSpecial ds 
     | isStreet ds = Action 1500 ds
     | isNothing ds = Action 500 ds
     | isThreePair ds = Action 1500 ds
-scoreSet' ds = mconcat . map scoreDie $ [1,2,3,4,5,6]
+    | otherwise = mempty
+
+scoreSet' :: [Die] -> Action
+scoreSet' ds = max (mconcat . map scoreDie $ [1,2,3,4,5,6]) (scoreSpecial ds)
     where scoreDie d = scoreMultiples d (count d ds)
 
 -- Compute the Action that corresponds to taking a given subset
