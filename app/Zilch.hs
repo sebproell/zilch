@@ -2,7 +2,12 @@ module Zilch where
 
 import Data.List ( sort, group )
 
+import qualified Data.Map as Map
+
 type Die = Int
+
+diceValues :: [Die]
+diceValues = [1..6]
 
 data Action = Action {points :: Int, takeDice :: [Die]} deriving (Show, Eq, Ord)
 
@@ -23,13 +28,13 @@ subsets []  = [[]]
 subsets (x:xs) = subsets xs ++ map (x:) (subsets xs)
 
 isStreet :: [Die] -> Bool
-isStreet ds = [1,2,3,4,5,6] == sort ds
+isStreet ds = diceValues == sort ds
 
 isNothing :: [Die] -> Bool
 isNothing ds
     | length ds /= 6 = False
     | isStreet ds = False
-    | otherwise = all (\d -> tooFew d (count d ds)) [1,2,3,4,5,6]
+    | otherwise = all (\d -> tooFew d (count d ds)) diceValues
         where tooFew 1 c = c == 0
               tooFew 5 c = c == 0
               tooFew d c = c < 3
@@ -70,5 +75,38 @@ scoreSet ds = onlyIfAllDiceTaken . scoreSet' $ ds
 
 -- All the Actions that can be taken for a given list of dice
 actions :: [Die] -> [Action]
-actions = filter (/= mempty) . unique . map scoreSet . subsets
+actions = filterInvalid . unique . map scoreSet . subsets
+    where filterInvalid [mempty] = [mempty]
+          filterInvalid actions = filter (/= mempty) actions
 
+
+data GameState = GameState {score :: Int, availableDice :: Int} deriving (Show, Eq, Ord)
+
+data Transition = Transition {probability :: Double, newState :: GameState} deriving (Show)
+
+allThrows :: Int -> [[Die]]
+allThrows 0 = [[]]
+allThrows n = [d:xs | d <- diceValues, xs <- allThrows (n-1)]
+
+allActions :: Int -> [[Action]]
+allActions =  map actions . allThrows
+
+takeAction :: GameState -> Action -> GameState
+takeAction g (Action 0 []) = GameState 0 0
+takeAction (GameState s r) (Action p ds) = GameState (p+s) (newDiceCount $ r - length ds)
+    where newDiceCount a = if a == 0 then 6 else a 
+
+takeAllActions :: GameState -> [[GameState]]
+takeAllActions g@(GameState s n) = (map . map) (takeAction g) $ allActions n
+
+throwProbability :: Int -> Double
+throwProbability n = 1.0/(6.0^n)
+
+transitionMap :: GameState -> Map.Map GameState Integer
+transitionMap = foldl (\m gs -> Map.insertWith (+) gs 1 m) Map.empty . concat . takeAllActions
+
+probabilityMap :: GameState -> Map.Map GameState Double
+probabilityMap g@(GameState s n) = fmap (\c -> fromIntegral c * throwProbability n) . transitionMap $ g
+
+mapForScore :: Int -> Int -> Map.Map GameState Double
+mapForScore n s = probabilityMap $ GameState s n
