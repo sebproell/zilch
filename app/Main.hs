@@ -9,4 +9,4 @@ main = do
     n <- getLine
     putStrLn "Score: "
     s <- getLine
-    print $ mapForScore (read n) (read s)
+    print $ sum . map maximum . (map . map) expected . recurse $ GameState (read s) (read n)
