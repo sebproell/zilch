@@ -73,6 +73,7 @@ scoreSet ds = onlyIfAllDiceTaken . scoreSet' $ ds
     where onlyIfAllDiceTaken a | length (takeDice a) == length ds = a
                                | otherwise = mempty
 
+
 -- All the Actions that can be taken for a given list of dice
 actions :: [Die] -> [Action]
 actions = filterInvalid . unique . map scoreSet . subsets
@@ -82,6 +83,9 @@ actions = filterInvalid . unique . map scoreSet . subsets
 
 data GameState = GameState {score :: Double, availableDice :: Int} deriving (Show, Eq)
 
+data DecisionTree = MultiNode [DecisionTree]
+                  | Node GameState [DecisionTree] deriving Show
+
 instance Ord GameState where
     a <= b = score a <= score b
 
@@ -89,8 +93,14 @@ allThrows :: Int -> [[Die]]
 allThrows 0 = [[]]
 allThrows n = [d:xs | d <- diceValues, xs <- allThrows (n-1)]
 
+memoize :: (Int -> [[Action]]) -> (Int -> [[Action]])
+memoize f = (map f [0 ..] !!)
+
+allActions' :: Int -> [[Action]]
+allActions' =  map actions . allThrows
+
 allActions :: Int -> [[Action]]
-allActions =  map actions . allThrows
+allActions = memoize allActions'
 
 takeAction :: GameState -> Action -> GameState
 takeAction g (Action 0 []) = GameState 0 0
@@ -131,3 +141,18 @@ expected = sum . map score . selectBestOption
 
 selectBestOption :: [[GameState]] -> [GameState]
 selectBestOption = map maximum
+
+makeMultiNode :: Double -> [GameState] -> DecisionTree
+makeMultiNode prob = MultiNode . map (toTree prob) 
+
+toTree :: Double -> GameState -> DecisionTree
+toTree prob initial@(GameState s n) = Node initial . map (makeMultiNode (throwProbability n)). takeAllActionsWithProbability prob $ initial
+
+makeTree :: GameState -> DecisionTree
+makeTree = toTree 1.0
+
+expectedTree :: Int -> DecisionTree -> Double
+expectedTree 0 (Node g _) = score g
+expectedTree levels (Node g subtrees) = sum . map (expectedTree (levels-1)) $ subtrees
+expectedTree levels (MultiNode trees) = maximum . map (expectedTree levels) $ trees
+
