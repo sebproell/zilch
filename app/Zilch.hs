@@ -136,9 +136,6 @@ takeAllActionsWithProbability branchProbability gs =  (map . map) (\x -> GameSta
 recurse :: GameState -> [[[[GameState]]]]
 recurse gs = (map . map) (takeAllActionsWithProbability . throwProbability . availableDice $ gs) . takeAllActionsWithProbability 1.0 $ gs
 
-expected :: [[GameState]] -> Double
-expected = sum . map score . selectBestOption
-
 selectBestOption :: [[GameState]] -> [GameState]
 selectBestOption = map maximum
 
@@ -159,15 +156,21 @@ expectedTree levels (MultiNode trees) = maximum . map (expectedTree levels) $ tr
 
 -- Graph-based implementation
 
-
 groupSortActions :: Int -> [(Int, [Action])]
 groupSortActions i = [ (length g, head g) | g <- group . sort . allActions $ i]
 
 type Score = Double 
 type DiceCount = Int
 
+data Annotation = Reject | Take deriving Show
+
+type AnnotatedScore = (Score, Annotation)
+
+-- A node which corresponds to a given number of dice
 data DecisionNode = DecisionNode DiceCount [MultiDecisionEdge] deriving (Show)
+-- A collection of edges that are mutually exclusive. Also stores the multiplicity
 data MultiDecisionEdge = MultiDecisionEdge Int [DecisionEdge] deriving (Show)
+-- A single edge with an associated score, that connects two nodes
 data DecisionEdge = DecisionEdge Score DecisionNode deriving (Show)
 
 instance Eq DecisionNode where
@@ -191,22 +194,18 @@ makeGraph' n = DecisionNode n . map makeMultiDecisionNode . groupSortActions $ n
 makeGraph :: DiceCount -> DecisionNode
 makeGraph = memoizeGraph makeGraph'
 
+expectedNode :: Score -> Int -> DecisionNode -> Score
+expectedNode accScore 0 _ = accScore
+expectedNode accScore level (DecisionNode n multiedges) = throwProbability n * (sum . map (expectedMultiEdge accScore (level - 1))) multiedges
 
-memoizeExpectedNode :: (Int -> DecisionNode -> Double) -> (Int -> DecisionNode -> Double)
-memoizeExpectedNode f l (DecisionNode d _)
-  = [f k (makeGraph d) | k <- [0 .. ], d <- [0 .. 6]] !! (d + l*7)
+expectedMultiEdge :: Score -> Int -> MultiDecisionEdge -> Score
+expectedMultiEdge accScore level (MultiDecisionEdge mult edges) = fromIntegral mult * (maximum . map (expectedEdge accScore level) ) edges
 
-expectedNode' :: Int -> DecisionNode -> Double
-expectedNode' 0 _ = 0.0
-expectedNode' level (DecisionNode n multiedges) = throwProbability n * (sum . map (expectedMultiEdge (level - 1))) multiedges
+expectedEdge :: Score -> Int -> DecisionEdge -> Score
+expectedEdge accScore level (DecisionEdge 0 _) = 0.0
+expectedEdge accScore level (DecisionEdge s node) = expectedNode (s+accScore) level node
 
-expectedNode :: Int -> DecisionNode -> Double
-expectedNode = memoizeExpectedNode expectedNode'
-
-expectedMultiEdge :: Int -> MultiDecisionEdge -> Double
-expectedMultiEdge level (MultiDecisionEdge mult edges) = fromIntegral mult * (maximum . map (expectedEdge level) ) edges
-
-expectedEdge :: Int -> DecisionEdge -> Double
-expectedEdge level (DecisionEdge s node) = s + expectedNode level node
+recommend :: Score -> Int -> DecisionNode -> Annotation
+recommend s i n = let r = expectedNode s i n in if r > s then Take else Reject
 
 
