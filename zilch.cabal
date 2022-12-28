@@ -16,10 +16,6 @@ version:            0.1.0.0
 author:             Sebastian Proell
 maintainer:         sebastian.proell@tum.de
 
--- A copyright notice.
--- copyright:
--- category:
-extra-source-files: CHANGELOG.md
 
 executable zilch
     main-is:          Main.hs
