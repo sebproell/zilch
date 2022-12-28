@@ -2,6 +2,16 @@ module Main where
 
 import Zilch
 
+
+logo :: String
+logo = ">=======>>=>      >=>                  \n" ++
+       "       >=>    >>  >=>         >=>      \n" ++
+       "      >=>         >=>    >==> >=>      \n" ++
+       "    >=>      >=>  >=>  >=>    >=>>=>   \n" ++
+       "   >=>       >=>  >=> >=>     >=>  >=> \n" ++
+       " >=>         >=>  >=>  >=>    >>   >=> \n" ++
+       ">==========> >=> >==>    >==> >=>  >=> \n"
+
 info :: Int -> AnnotatedScore -> IO()
 info i (s, Take) = putStrLn $ "Rolling up to "++ show i ++
         " times (when reasonable) gives " ++ show s ++
@@ -28,4 +38,6 @@ loop = do
     loop
 
 main :: IO()
-main = loop
+main = do
+    putStrLn logo
+    loop
