@@ -2,11 +2,18 @@ module Main where
 
 import Zilch
 
+info :: Int -> AnnotatedScore -> IO()
+info i (s, Take) = putStrLn $ "Rolling up to "++ show i ++
+        " times (when reasonable) gives " ++ show s ++
+        " on average --> Take another turn"
+info i (s, Reject) = putStrLn $ "Rolling up to "++ show i ++
+        " times (when reasonable) never gives more points than you already have" ++
+        " --> Stop"
+
 roll:: Int -> Score -> Int -> IO ()
 roll n s i = do
-    putStrLn $ "Unconditionally rolling "++ show i ++
-        " times gives " ++ (show . expectedNode s i . makeGraph) n ++
-        " on average --> " ++ (show . recommend s i . makeGraph) n
+    let expected = expectedNode s i . makeGraph $ n in
+        info i expected
 
 loop :: IO ()
 loop = do
@@ -17,6 +24,7 @@ loop = do
     roll (read n) (read s) 1
     roll (read n) (read s) 2
     roll (read n) (read s) 3
+    roll (read n) (read s) 4
     loop
 
 main :: IO()

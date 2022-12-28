@@ -162,9 +162,9 @@ groupSortActions i = [ (length g, head g) | g <- group . sort . allActions $ i]
 type Score = Double 
 type DiceCount = Int
 
-data Annotation = Reject | Take deriving Show
+data Strategy = Reject | Take deriving Show
 
-type AnnotatedScore = (Score, Annotation)
+type AnnotatedScore = (Score, Strategy)
 
 -- A node which corresponds to a given number of dice
 data DecisionNode = DecisionNode DiceCount [MultiDecisionEdge] deriving (Show)
@@ -194,18 +194,17 @@ makeGraph' n = DecisionNode n . map makeMultiDecisionNode . groupSortActions $ n
 makeGraph :: DiceCount -> DecisionNode
 makeGraph = memoizeGraph makeGraph'
 
-expectedNode :: Score -> Int -> DecisionNode -> Score
-expectedNode accScore 0 _ = accScore
-expectedNode accScore level (DecisionNode n multiedges) = throwProbability n * (sum . map (expectedMultiEdge accScore (level - 1))) multiedges
+expectedNode :: Score -> Int -> DecisionNode -> AnnotatedScore
+expectedNode accScore 0 _ = (accScore, Take)
+expectedNode accScore level (DecisionNode n multiedges) =
+    let s = throwProbability n * (sum . map (expectedMultiEdge accScore (level - 1))) multiedges in
+        if s > accScore then (s, Take) else (accScore, Reject)
 
 expectedMultiEdge :: Score -> Int -> MultiDecisionEdge -> Score
 expectedMultiEdge accScore level (MultiDecisionEdge mult edges) = fromIntegral mult * (maximum . map (expectedEdge accScore level) ) edges
 
 expectedEdge :: Score -> Int -> DecisionEdge -> Score
 expectedEdge accScore level (DecisionEdge 0 _) = 0.0
-expectedEdge accScore level (DecisionEdge s node) = expectedNode (s+accScore) level node
-
-recommend :: Score -> Int -> DecisionNode -> Annotation
-recommend s i n = let r = expectedNode s i n in if r > s then Take else Reject
+expectedEdge accScore level (DecisionEdge s node) = fst . expectedNode (s+accScore) level $ node
 
 
