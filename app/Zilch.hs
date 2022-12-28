@@ -5,6 +5,8 @@ import Data.List ( sort, group )
 import qualified Data.Map as Map
 
 type Die = Int
+type Score = Double 
+type DiceCount = Int
 
 diceValues :: [Die]
 diceValues = [1..6]
@@ -80,87 +82,24 @@ actions = filterInvalid . unique . map scoreSet . subsets
     where filterInvalid [mempty] = [mempty]
           filterInvalid actions = filter (/= mempty) actions
 
-
-data GameState = GameState {score :: Double, availableDice :: Int} deriving (Show, Eq)
-
-data DecisionTree = MultiNode [DecisionTree]
-                  | Node GameState [DecisionTree] deriving Show
-
-instance Ord GameState where
-    a <= b = score a <= score b
-
-allThrows :: Int -> [[Die]]
+allThrows :: DiceCount -> [[Die]]
 allThrows 0 = [[]]
 allThrows n = [d:xs | d <- diceValues, xs <- allThrows (n-1)]
 
-memoize :: (Int -> [[Action]]) -> (Int -> [[Action]])
-memoize f = (map f [0 ..] !!)
 
-allActions' :: Int -> [[Action]]
-allActions' =  map actions . allThrows
-
-allActions :: Int -> [[Action]]
+allActions :: DiceCount -> [[Action]]
 allActions = memoize allActions'
+    where memoize f = (map f [0 ..] !!)
+          allActions' =  map actions . allThrows
 
-takeAction :: GameState -> Action -> GameState
-takeAction g (Action 0 0) = GameState 0 0
-takeAction (GameState s r) (Action p ds) = GameState (fromIntegral p+s) (newDiceCount $ r - ds)
-    where newDiceCount a = if a == 0 then 6 else a 
 
-takeAllActions :: GameState -> [[GameState]]
-takeAllActions g@(GameState s n) = (map . map) (takeAction g) $ allActions n
-
-throwProbability :: Int -> Double
+throwProbability :: DiceCount -> Double
 throwProbability n = 1.0/(fromIntegral (length diceValues)^n)
-
-transitionMap :: GameState -> Map.Map GameState Integer
-transitionMap = foldl (\m gs -> Map.insertWith (+) gs 1 m) Map.empty . concat . takeAllActions
-
-probabilityMap :: GameState -> Map.Map GameState Double
-probabilityMap g@(GameState s n) = fmap (\c -> fromIntegral c * throwProbability n) . transitionMap $ g
-
-mapForScore :: Int -> Double -> Map.Map GameState Double
-mapForScore n s = probabilityMap $ GameState s n
-
-
-
-expectedValue :: Map.Map GameState Double -> Double
-expectedValue = fst . Map.mapAccumWithKey f 0.0
-    where f accum gs prob = (accum + prob * score gs, prob)
-
-
-takeAllActionsWithProbability :: Double -> GameState -> [[GameState]]
-takeAllActionsWithProbability branchProbability gs =  (map . map) (\x -> GameState (score x * branchProbability * throwProbability (availableDice gs)) (availableDice x)) . takeAllActions $ gs
-    where prob as = 1.0 / fromIntegral (length as)
-
-recurse :: GameState -> [[[[GameState]]]]
-recurse gs = (map . map) (takeAllActionsWithProbability . throwProbability . availableDice $ gs) . takeAllActionsWithProbability 1.0 $ gs
-
-selectBestOption :: [[GameState]] -> [GameState]
-selectBestOption = map maximum
-
-makeMultiNode :: Double -> [GameState] -> DecisionTree
-makeMultiNode prob = MultiNode . map (toTree prob) 
-
-toTree :: Double -> GameState -> DecisionTree
-toTree prob initial@(GameState s n) = Node initial . map (makeMultiNode (throwProbability n)). takeAllActionsWithProbability prob $ initial
-
-makeTree :: GameState -> DecisionTree
-makeTree = toTree 1.0
-
-expectedTree :: Int -> DecisionTree -> Double
-expectedTree 0 (Node g _) = score g
-expectedTree levels (Node g subtrees) = sum . map (expectedTree (levels-1)) $ subtrees
-expectedTree levels (MultiNode trees) = maximum . map (expectedTree levels) $ trees
-
 
 -- Graph-based implementation
 
 groupSortActions :: Int -> [(Int, [Action])]
 groupSortActions i = [ (length g, head g) | g <- group . sort . allActions $ i]
-
-type Score = Double 
-type DiceCount = Int
 
 data Strategy = Reject | Take deriving Show
 
