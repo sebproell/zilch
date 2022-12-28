@@ -9,13 +9,13 @@ type Die = Int
 diceValues :: [Die]
 diceValues = [1..6]
 
-data Action = Action {points :: Int, takeDice :: [Die]} deriving (Show, Eq, Ord)
+data Action = Action {points :: Int, takeDice :: Int} deriving (Show, Eq, Ord)
 
 instance Semigroup Action where
-    Action p1 d1 <> Action p2 d2  = Action (p1 + p2) (d1 ++ d2)
+    Action p1 d1 <> Action p2 d2  = Action (p1 + p2) (d1 + d2)
 
 instance Monoid Action where
-    mempty = Action 0 []
+    mempty = Action 0 0
 
 count :: Eq a => a -> [a] -> Int
 count x = length . filter (x==)
@@ -46,19 +46,19 @@ isThreePair ds
 
 
 multiplyBase :: Die -> Int -> Int -> Action
-multiplyBase d base n = Action (base*2^(n-3)) (replicate n d) 
+multiplyBase d base n = Action (base*2^(n-3)) n
 
 scoreMultiples :: Die -> Int -> Action
-scoreMultiples 1 n = if n < 3 then Action (n*100) (replicate n 1) else multiplyBase 1 1000 n
-scoreMultiples 5 n = if n < 3 then Action (n*50) (replicate n 5) else multiplyBase 5 500 n
+scoreMultiples 1 n = if n < 3 then Action (n*100) n else multiplyBase 1 1000 n
+scoreMultiples 5 n = if n < 3 then Action (n*50) n else multiplyBase 5 500 n
 scoreMultiples d n = if n >= 3 then multiplyBase d (d*100) n else mempty
 
 
 scoreSpecial :: [Die] -> Action
 scoreSpecial ds 
-    | isStreet ds = Action 1500 ds
-    | isNothing ds = Action 500 ds
-    | isThreePair ds = Action 1500 ds
+    | isStreet ds = Action 1500 6
+    | isNothing ds = Action 500 6
+    | isThreePair ds = Action 1500 6
     | otherwise = mempty
 
 scoreSet' :: [Die] -> Action
@@ -70,7 +70,7 @@ scoreSet' ds = max (mconcat . map scoreDie $ [1,2,3,4,5,6]) (scoreSpecial ds)
 -- the Action will be mempty
 scoreSet :: [Die] -> Action
 scoreSet ds = onlyIfAllDiceTaken . scoreSet' $ ds
-    where onlyIfAllDiceTaken a | length (takeDice a) == length ds = a
+    where onlyIfAllDiceTaken a | takeDice a == length ds = a
                                | otherwise = mempty
 
 
@@ -103,8 +103,8 @@ allActions :: Int -> [[Action]]
 allActions = memoize allActions'
 
 takeAction :: GameState -> Action -> GameState
-takeAction g (Action 0 []) = GameState 0 0
-takeAction (GameState s r) (Action p ds) = GameState (fromIntegral p+s) (newDiceCount $ r - length ds)
+takeAction g (Action 0 0) = GameState 0 0
+takeAction (GameState s r) (Action p ds) = GameState (fromIntegral p+s) (newDiceCount $ r - ds)
     where newDiceCount a = if a == 0 then 6 else a 
 
 takeAllActions :: GameState -> [[GameState]]
@@ -155,4 +155,58 @@ expectedTree :: Int -> DecisionTree -> Double
 expectedTree 0 (Node g _) = score g
 expectedTree levels (Node g subtrees) = sum . map (expectedTree (levels-1)) $ subtrees
 expectedTree levels (MultiNode trees) = maximum . map (expectedTree levels) $ trees
+
+
+-- Graph-based implementation
+
+
+groupSortActions :: Int -> [(Int, [Action])]
+groupSortActions i = [ (length g, head g) | g <- group . sort . allActions $ i]
+
+type Score = Double 
+type DiceCount = Int
+
+data DecisionNode = DecisionNode DiceCount [MultiDecisionEdge] deriving (Show)
+data MultiDecisionEdge = MultiDecisionEdge Int [DecisionEdge] deriving (Show)
+data DecisionEdge = DecisionEdge Score DecisionNode deriving (Show)
+
+instance Eq DecisionNode where
+    DecisionNode a _ == DecisionNode b _ = a == b
+
+instance Ord DecisionNode where
+    DecisionNode a _ <= DecisionNode b _ = a <= b
+
+makeEdge :: DiceCount -> Action -> DecisionEdge
+makeEdge n (Action 0 0) = DecisionEdge 0 (makeGraph 0)
+makeEdge n a = DecisionEdge (fromIntegral . points $ a) (makeGraph . newDiceCount $ n - takeDice a)
+    where newDiceCount a = if a == 0 then 6 else a
+
+memoizeGraph :: (DiceCount -> DecisionNode) -> (DiceCount -> DecisionNode)
+memoizeGraph f = (map f [0 ..] !!)
+
+makeGraph' :: DiceCount -> DecisionNode
+makeGraph' n = DecisionNode n . map makeMultiDecisionNode . groupSortActions $ n
+    where makeMultiDecisionNode (multiplicity, actions) = MultiDecisionEdge multiplicity . map (makeEdge n) $ actions
+
+makeGraph :: DiceCount -> DecisionNode
+makeGraph = memoizeGraph makeGraph'
+
+
+memoizeExpectedNode :: (Int -> DecisionNode -> Double) -> (Int -> DecisionNode -> Double)
+memoizeExpectedNode f l (DecisionNode d _)
+  = [f k (makeGraph d) | k <- [0 .. ], d <- [0 .. 6]] !! (d + l*7)
+
+expectedNode' :: Int -> DecisionNode -> Double
+expectedNode' 0 _ = 0.0
+expectedNode' level (DecisionNode n multiedges) = throwProbability n * (sum . map (expectedMultiEdge (level - 1))) multiedges
+
+expectedNode :: Int -> DecisionNode -> Double
+expectedNode = memoizeExpectedNode expectedNode'
+
+expectedMultiEdge :: Int -> MultiDecisionEdge -> Double
+expectedMultiEdge level (MultiDecisionEdge mult edges) = fromIntegral mult * (maximum . map (expectedEdge level) ) edges
+
+expectedEdge :: Int -> DecisionEdge -> Double
+expectedEdge level (DecisionEdge s node) = s + expectedNode level node
+
 
